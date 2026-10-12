@@ -793,6 +793,7 @@
         @media (max-width: 640px) { .diagram-box { white-space: normal; max-width: 100%; } }   /* long boxes must wrap on phones */
         /* FOptInf: keep long titles clear of the slide number on phones */
         @media (max-width: 640px) { .slide h2 { padding-right: 3.6rem; } }
+        .slide h2 { padding-right: 3.6rem; }   /* long titles (slides 13, 14) must clear the slide number on desktop too */
         .sim-grid select, .sim-grid input[type="range"] { max-width: 100%; min-width: 0; }   /* long option labels must not spill into the next column */
     </style>
 </head>
@@ -801,7 +802,7 @@
 <header class="hero">
     <div class="series-label">Fourier Optics for Training &mdash; Presentation 03</div>
     <h1>Optical Engines in a <span class="accent">Training Cluster</span></h1>
-    <p class="subtitle">Where an optical transform engine would sit in a data-, tensor- and pipeline-parallel training cluster, what a mask rewritten every optimizer step costs against the digital step time, why layer-major scheduling fights pipelines and activation memory, the static Amdahl bound at cluster scale, and why the optimizer's frequency transforms (DeMo) are worth bytes on the link rather than FLOPs.</p>
+    <p class="subtitle">Where an optical transform engine would sit in a data-, tensor- and pipeline-parallel training cluster, what a mask rewritten every optimizer step costs against the digital step time, why layer-major scheduling fights pipelines and activation memory, the static Amdahl bound at cluster scale, why the optimizer's frequency transforms (DeMo) are worth bytes on the link rather than FLOPs, and what a measured experiment and simulation say about computing a fixed frequency band in transit, within and across data centres.</p>
 
     <div class="tags">
         <span class="tag">Parallelism</span>
@@ -810,6 +811,8 @@
         <span class="tag">Pipelines</span>
         <span class="tag">Amdahl</span>
         <span class="tag">DeMo</span>
+        <span class="tag">Fixed band</span>
+        <span class="tag">Cross-DC</span>
     </div>
 
     <div class="pipeline">
@@ -842,13 +845,15 @@
         <li><a href="#slide-09">The Static Amdahl Bound for a Step</a></li>
         <li><a href="#slide-10">What 1.1x Means at Cluster Scale</a></li>
         <li><a href="#slide-11">The Optimizer Step and DeMo</a></li>
-        <li><a href="#slide-12">Frequency Transforms in Transit (Speculative)</a></li>
-        <li><a href="#slide-13">What Does Not Map at Cluster Scale</a></li>
-        <li><a href="#slide-14">What to Take Away</a></li>
+        <li><a href="#slide-12">Frequency Transforms in Transit: a Fixed Band</a></li>
+        <li><a href="#slide-13">Frequency Transforms in Transit: Where the Band Is Computed</a></li>
+        <li><a href="#slide-14">Training Across Data Centres: Time and Energy to a Loss</a></li>
+        <li><a href="#slide-15">What Does Not Map at Cluster Scale</a></li>
+        <li><a href="#slide-16">What to Take Away</a></li>
     </ul>
     <div class="concepts">
         <p><strong>Concepts used here, and where they are explained.</strong> Each links to a glossary entry: this <a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#glossary">series glossary</a>, or the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#glossary">Fourier Optics for Inference glossary</a> for the physics and the inference concepts it already explains.</p>
-        <div class="chips"><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-sixn" title="Training a dense model costs about 6 FLOPs per parameter per token: 2 for the forward pass and 4 for the backward (the activation gradient and the weight gradient), plus an attention term that grows with sequence length. The analysis reproduces it exactly for the transformer variant.">The 6N rule</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-corr" title="For y = h * u, the input gradient is G correlated with h, IFFT(G·conj(H)), and the filter gradient is G correlated with u, IFFT(G·conj(U)). A backward long convolution is one more FFT and two more Fourier-domain products than the forward.">The gradient of a convolution is a correlation</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-masked" title="A Fourier-domain product whose second operand is a weight spectrum (forward H, backward conj(H)) can be a mask written once per optimizer step. One whose operands both depend on the sample (conj(U)·G for the weight gradient) needs a new mask for every sequence, and in practice stays digital.">Weight-masked and data-by-data products</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-staticshare" title="The fraction of a training step&#x27;s FLOPs that are transforms plus weight-masked products: what an engine with once-per-step masks could take. 1/(1−share) bounds the step speed-up. For Hyena-2 at 4,096 tokens it is 0.14%; for block-circulant weights 9.7%.">Static share and the training Amdahl bound</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-maskrewrite" title="An inference engine writes its filter spectra once; a training engine must rewrite them after every optimizer step, for the forward and the backward pass. Processing the whole step layer by layer amortises each write over every sequence, but the frame budget still rivals the digital step time.">Mask rewrites per optimizer step</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-layermajor" title="Passing every sequence of a step through one layer before moving to the next, so one mask write serves the whole step. It conflicts with pipeline parallelism and activation memory, which prefer sequence-major order.">Layer-major scheduling</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-demo" title="An optimizer that DCT-transforms the momentum in small chunks and sends only the largest coefficients between workers (Peng et al., 2024). Its transforms are about 5×10^−6 of a step&#x27;s FLOPs: what it saves is link bytes, not compute.">DeMo (decoupled momentum)</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-gradprecision" title="Training keeps activations and weights in BF16 or FP8 E4M3 and gradients in FP8 E5M2, which trades mantissa for range. Matching E5M2 needs about 5.3–5.8 ENOB and BF16 about 10.3–10.7, higher for spiky gradients whose crest factor is larger.">Gradient precision and FP8 E5M2</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-transformengine" title="An optical MAC accelerates every matrix multiply (the simulator&#x27;s hypothetical optical part); a Fourier transform engine accelerates only FFT and convolution work and leaves matmuls to a digital part.">Transform engine against optical MAC</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-hyena" title="An attention-free operator: N+1 linear projections, a short depthwise convolution, then N rounds of a long implicit convolution (by FFT) and elementwise gating. Order 2 is the usual language-model setting.">Hyena</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-circulant" title="A weight matrix made of circulant blocks, each defined by one vector, so multiplying by it is an FFT, a pointwise product and an inverse FFT (CirCNN). It turns matmuls into transforms; at LLM scale it is speculative.">Block-circulant weights</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-slm" title="A pixelated device that writes values into a light field. Liquid-crystal SLMs modulate phase or amplitude and settle in tens of milliseconds; a 2-megapixel digital micromirror device switches amplitude at about 1 kHz with 8-bit depth (20 kHz binary). Pixel count and frame rate bound how fast inputs and Fourier-plane masks can change.">Spatial light modulator (SLM)</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-maskcap" title="A 4f pass multiplies by one mask, so every filter spectrum must be on the mask while its inputs pass. Mask values needed per forward pass divided by what the SLM holds gives rewrites per pass, each costing a frame.">Fourier-plane mask capacity</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-opticalshare" title="The fraction f of prefill FLOPs a transform engine could take over (FFTs plus Fourier-plane multiplies). If it became free, prefill would speed up by at most 1/(1−f); for a Hyena-2 model of Llama-3-8B&#x27;s shape f is 0.20% at 2,048 tokens.">Optical share and the Amdahl bound</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-breakeven" title="The value of a parameter (static power, ENOB, mask rate, GPU FFT efficiency) at which an optical prefill pool&#x27;s J/token or TTFT p99 equals the all-GPU baseline&#x27;s, found by bisection on full simulator runs.">Break-even point</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-photoniclink" title="Optical links (co-packaged optics, optical I/O chiplets) that move bytes, such as the KV cache, between chips. They are photonics but not Fourier optics: they compute nothing.">Photonic interconnect</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-computetransit" title="Operations applied in a link&#x27;s data path, between transmitter and receiver, on data that must move anyway. At about 1–2 operations per byte at line rate it suits requantising or frequency-compressing traffic, not matmuls; it helps latency only where the link is the bottleneck. Speculative here.">Compute in transit</a><a href="https://brendanjameslynskey.github.io/SimEng_Hub_Toolkit/#g-amdahl" title="Speeding up part of a program speeds up the whole only in proportion to that part&#x27;s share of the time.">Amdahl's law</a></div>
+        <div class="chips"><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-sixn" title="Training a dense model costs about 6 FLOPs per parameter per token: 2 for the forward pass and 4 for the backward (the activation gradient and the weight gradient), plus an attention term that grows with sequence length. The analysis reproduces it exactly for the transformer variant.">The 6N rule</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-corr" title="For y = h * u, the input gradient is G correlated with h, IFFT(G·conj(H)), and the filter gradient is G correlated with u, IFFT(G·conj(U)). A backward long convolution is one more FFT and two more Fourier-domain products than the forward.">The gradient of a convolution is a correlation</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-masked" title="A Fourier-domain product whose second operand is a weight spectrum (forward H, backward conj(H)) can be a mask written once per optimizer step. One whose operands both depend on the sample (conj(U)·G for the weight gradient) needs a new mask for every sequence, and in practice stays digital.">Weight-masked and data-by-data products</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-staticshare" title="The fraction of a training step&#x27;s FLOPs that are transforms plus weight-masked products: what an engine with once-per-step masks could take. 1/(1−share) bounds the step speed-up. For Hyena-2 at 4,096 tokens it is 0.14%; for block-circulant weights 9.7%.">Static share and the training Amdahl bound</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-maskrewrite" title="An inference engine writes its filter spectra once; a training engine must rewrite them after every optimizer step, for the forward and the backward pass. Processing the whole step layer by layer amortises each write over every sequence, but the frame budget still rivals the digital step time.">Mask rewrites per optimizer step</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-layermajor" title="Passing every sequence of a step through one layer before moving to the next, so one mask write serves the whole step. It conflicts with pipeline parallelism and activation memory, which prefer sequence-major order.">Layer-major scheduling</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-demo" title="An optimizer that DCT-transforms the momentum in small chunks and sends only the largest coefficients between workers (Peng et al., 2024). Its transforms are about 5×10^−6 of a step&#x27;s FLOPs: what it saves is link bytes, not compute.">DeMo (decoupled momentum)</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-errorfeedback" title="A compressor that keeps everything it did not send and adds it to the next step&#x27;s input, so nothing is dropped, only delayed. In DeMo the delta compressed each step is the momentum plus this residual, which decays by 0.999 per step.">Error feedback</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-fixedband" title="Sending the same transform coefficients (for example the lowest 1/16 of each chunk&#x27;s DCT) every step instead of the largest ones: no comparisons, so a link module could compute it, and every worker&#x27;s band lines up for summing. On a 15.8M-parameter GPT it ended at a validation loss of 3.124–3.158 against 1.785 for DeMo&#x27;s top-k.">Fixed frequency band</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-capturedenergy" title="The share of a tensor&#x27;s energy (the sum of its squared transform coefficients) that a selector keeps. On the experiment&#x27;s momentum, with 2-D 64×64 chunks, top-k kept 0.643 and the fixed low band 0.013; a random set keeps about the keep fraction.">Captured energy</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-wirebytes" title="A ring all-reduce of B bytes sends 2(N−1)/N·B per worker whatever N is; a ring all-gather of P bytes per worker sends (N−1)·P, which grows with N. On 8 workers DeMo&#x27;s 8× and 16× smaller payloads became only 2× and 4× fewer wire bytes.">All-gather against all-reduce wire bytes</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-timetoloss" title="The measured steps to reach a loss times the step time (compute plus, for each sync round, latency and bytes over bandwidth), and the same steps times the energy per step. It weighs a compressor&#x27;s saved bytes against the extra steps it needs.">Time and energy to a target loss</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-crossdc" title="Data-parallel workers split across data centres sync over a WAN far slower than the fabric inside one. The break-even bandwidth is the WAN rate below which one way of syncing reaches the target loss sooner than another, found by bisection.">Cross-data-centre training and break-even bandwidth</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-diloco" title="Workers train locally and sync only every H steps, dividing communication by H; DiLoCo (Douillard et al., 2023) also changes the optimizer. The Compute in Transit simulation&#x27;s DiLoCo-style rows assume the steps to a loss are unchanged: an extrapolation, not a measurement.">DiLoCo-style sync</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/#g-gradprecision" title="Training keeps activations and weights in BF16 or FP8 E4M3 and gradients in FP8 E5M2, which trades mantissa for range. Matching E5M2 needs about 5.3–5.8 ENOB and BF16 about 10.3–10.7, higher for spiky gradients whose crest factor is larger.">Gradient precision and FP8 E5M2</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-transformengine" title="An optical MAC accelerates every matrix multiply (the simulator&#x27;s hypothetical optical part); a Fourier transform engine accelerates only FFT and convolution work and leaves matmuls to a digital part.">Transform engine against optical MAC</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-hyena" title="An attention-free operator: N+1 linear projections, a short depthwise convolution, then N rounds of a long implicit convolution (by FFT) and elementwise gating. Order 2 is the usual language-model setting.">Hyena</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-circulant" title="A weight matrix made of circulant blocks, each defined by one vector, so multiplying by it is an FFT, a pointwise product and an inverse FFT (CirCNN). It turns matmuls into transforms; at LLM scale it is speculative.">Block-circulant weights</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-slm" title="A pixelated device that writes values into a light field. Liquid-crystal SLMs modulate phase or amplitude and settle in tens of milliseconds; a 2-megapixel digital micromirror device switches amplitude at about 1 kHz with 8-bit depth (20 kHz binary). Pixel count and frame rate bound how fast inputs and Fourier-plane masks can change.">Spatial light modulator (SLM)</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-maskcap" title="A 4f pass multiplies by one mask, so every filter spectrum must be on the mask while its inputs pass. Mask values needed per forward pass divided by what the SLM holds gives rewrites per pass, each costing a frame.">Fourier-plane mask capacity</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-opticalshare" title="The fraction f of prefill FLOPs a transform engine could take over (FFTs plus Fourier-plane multiplies). If it became free, prefill would speed up by at most 1/(1−f); for a Hyena-2 model of Llama-3-8B&#x27;s shape f is 0.20% at 2,048 tokens.">Optical share and the Amdahl bound</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-breakeven" title="The value of a parameter (static power, ENOB, mask rate, GPU FFT efficiency) at which an optical prefill pool&#x27;s J/token or TTFT p99 equals the all-GPU baseline&#x27;s, found by bisection on full simulator runs.">Break-even point</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-photoniclink" title="Optical links (co-packaged optics, optical I/O chiplets) that move bytes, such as the KV cache, between chips. They are photonics but not Fourier optics: they compute nothing.">Photonic interconnect</a><a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-computetransit" title="Operations applied in a link&#x27;s data path, between transmitter and receiver, on data that must move anyway. At about 1–2 operations per byte at line rate it suits requantising or frequency-compressing traffic, not matmuls; it helps latency only where the link is the bottleneck. Speculative here.">Compute in transit</a><a href="https://brendanjameslynskey.github.io/SimEng_Hub_Toolkit/#g-amdahl" title="Speeding up part of a program speeds up the whole only in proportion to that part&#x27;s share of the time.">Amdahl's law</a></div>
     </div>
 </section>
 
@@ -1147,39 +1152,164 @@
 <tr><td>8,029,995,008</td><td>2.409e+11</td><td>5.059e+16</td><td>4.76e-06</td></tr>
 </tbody></table></div>
     <p class="src">Source: <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Fourier_Optics_Training/blob/main/analysis/results.md">results.md</a>, section &ldquo;3. The optimizer step and DeMo&rdquo;: a DCT and an inverse DCT per chunk of 64, at the real-FFT cost.</p>
+    <p><strong>DeMo as measured.</strong> The <a href="https://compute-in-transit-results.vercel.app/experiment">Compute in Transit experiment</a> (<a href="https://brendanjameslynskey.github.io/CiT_04_Fixed_Band_Experiment/">CiT 04</a>) ran it on a 15.8M-parameter GPT (8 layers, width 384, context 256) on TinyStories, with 8 simulated workers of 8 sequences each per step for 3,000 steps. Its mechanics, step by step:</p>
+    <ul>
+        <li><strong>Error feedback.</strong> What is compressed is the <em>delta</em>: the momentum plus the residual of everything not sent before, which decays by 0.999 per step. What is sent is removed from it, so nothing is dropped, only delayed.</li>
+        <li><strong>Chunks.</strong> The DCT runs over 1-D 64-point, 1-D 256-point or 2-D 64&times;64 chunks; each keeps 1/16 of its coefficients.</li>
+        <li><strong>Sign.</strong> The workers gather each other's values and apply the <em>sign</em> of the resulting update, so every weight moves by a full step.</li>
+        <li><strong>The cost of compressing.</strong> Final validation loss, 3 seeds each: AdamW 1.646 &plusmn; 0.005, DeMo top-k (2-D 64&times;64) 1.785 &plusmn; 0.007. AdamW passes 1.785 by step 2,000; top-k never reaches 1.646 in 3,000 steps.</li>
+    </ul>
+    <p><strong>Payload is not wire bytes.</strong> A ring all-reduce of B bytes sends 2(N&minus;1)/N&middot;B per worker, whatever N is; DeMo's workers pick different coefficients, so they <em>all-gather</em> instead, and a ring all-gather of P bytes per worker sends (N&minus;1)&middot;P, which grows with N. On 8 workers, per worker per step (BF16 values):</p>
+    <div class="table-wrap"><table>
+<thead><tr><th>Configuration</th><th>Collective</th><th>Payload (bytes)</th><th>vs dense</th><th>Wire (bytes)</th><th>vs dense</th></tr></thead>
+<tbody>
+<tr><td>A&nbsp; AdamW</td><td>all-reduce</td><td>31,666,944</td><td>1.0x</td><td>55,417,152</td><td>1.0x</td></tr>
+<tr><td>B&nbsp; DeMo, top-k</td><td>all-gather</td><td>3,957,960</td><td>8.0x</td><td>27,705,720</td><td>2.0x</td></tr>
+<tr><td>C&nbsp; DeMo, fixed band (slide 12)</td><td>all-gather</td><td>1,979,184</td><td>16.0x</td><td>13,854,288</td><td>4.0x</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the experiment's results.md, section 1 (<a href="https://compute-in-transit-results.vercel.app/experiment#bytes">results site, &ldquo;What each worker sends&rdquo;</a>). Top-k's payload counts each index at the bytes a position within a chunk needs; the reference code sends int64 indices, 9,895,920 bytes per step, 2.5x the compact count.</p>
     <ul>
         <li><strong>As compute, it is nothing.</strong> Five millionths of the step, in 64-point transforms: far too small and too short for an optical engine, whose conversions and passes cost more per value than a GPU spends on a 64-point DCT.</li>
-        <li><strong>As communication, it is the point.</strong> What DeMo removes is gradient bytes on the network between replicas, the phase of the step (<a href="#slide-02">slide 02</a>) that no transform engine touches.</li>
-        <li>So the one place frequency transforms clearly earn their keep in a training cluster is the link, which is the subject of the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Compute_in_Transit/">Compute in Transit</a> series, not of a compute engine.</li>
+        <li><strong>As communication, it is the point, but less than the payload suggests.</strong> An 8x smaller payload is 2x fewer wire bytes on 8 workers, and the gap widens as workers are added. What DeMo removes is gradient bytes on the network between replicas, the phase of the step (<a href="#slide-02">slide 02</a>) that no transform engine touches. The next three slides follow it onto the link.</li>
     </ul>
 </section>
 
 <section class="slide" id="slide-12">
     <div class="slide-number">12</div>
-    <h2>Frequency Transforms in Transit (Speculative)</h2>
-    <p>Gradient compression is an established line of work: sparsification (Deep Gradient Compression, Lin et al., <a href="https://arxiv.org/abs/1712.01887">arXiv:1712.01887</a>), low-rank updates (PowerSGD, Vogels et al., <a href="https://arxiv.org/abs/1905.13727">arXiv:1905.13727</a>) and DeMo's DCT. All of them compress at the worker, on the accelerator. The speculative question is whether a frequency transform could run <em>in the link's data path</em>, on traffic that has to move anyway.</p>
-    <div class="diagram-flow">
-        <span class="diagram-box">gradients</span>
-        <span class="diagram-arrow">&rarr;</span>
-        <span class="diagram-box accent">transform + keep top-k (in the NIC or link)</span>
-        <span class="diagram-arrow">&rarr;</span>
-        <span class="diagram-box">fewer bytes</span>
-        <span class="diagram-arrow">&rarr;</span>
-        <span class="diagram-box">sum, inverse at the receiver</span>
-    </div>
+    <h2>Frequency Transforms in Transit: a Fixed Band</h2>
+    <p>Gradient compression is an established line of work: sparsification (Deep Gradient Compression, Lin et al., <a href="https://arxiv.org/abs/1712.01887">arXiv:1712.01887</a>), low-rank updates (PowerSGD, Vogels et al., <a href="https://arxiv.org/abs/1905.13727">arXiv:1905.13727</a>) and DeMo's DCT. All of them compress at the worker. Could the transform run <em>in the link's data path</em> instead, on bytes that have to move anyway?</p>
+    <p><strong>Why a fixed band.</strong> A photonic link module (Kundu et al., <a href="https://arxiv.org/abs/2608.21536">arXiv:2608.21536</a>) can run the transform but not the comparisons top-k needs to find the largest coefficients. A <em>fixed band</em>, the same 1/16 of positions in every chunk every step, needs no comparisons, sends no indices (16x smaller payload, against top-k's 8x), and puts every worker's values at the same positions. The Compute in Transit experiment measured what that substitution costs, on the same 15.8M-parameter model:</p>
+    <div class="table-wrap"><table>
+<thead><tr><th>Configuration</th><th>Seeds</th><th>Final validation loss</th><th>Steps to 3.158</th></tr></thead>
+<tbody>
+<tr><td>A&nbsp; AdamW</td><td>3</td><td>1.646 &plusmn; 0.005</td><td>400</td></tr>
+<tr><td>B&nbsp; DeMo, top-k, 2-D 64&times;64</td><td>3</td><td>1.785 &plusmn; 0.007</td><td>400</td></tr>
+<tr><td>C&nbsp; fixed low band, 1-D 256-point</td><td>3</td><td>3.124 &plusmn; 0.008</td><td>2,667</td></tr>
+<tr><td>C&nbsp; fixed low band, 1-D 64-point</td><td>1</td><td>3.137</td><td>2,800</td></tr>
+<tr><td>C&nbsp; fixed low band, 2-D 64&times;64</td><td>3</td><td>3.158 &plusmn; 0.009</td><td>not every seed</td></tr>
+<tr><td>D&nbsp; calibrated band, 2-D 64&times;64</td><td>3</td><td>3.087 &plusmn; 0.027</td><td>2,533</td></tr>
+<tr><td>F&nbsp; fixed zig-zag band, 2-D 64&times;64</td><td>1</td><td>3.028</td><td>2,200</td></tr>
+<tr><td>F&nbsp; fixed high band, 2-D 64&times;64</td><td>1</td><td>3.244</td><td>not reached</td></tr>
+<tr><td>F&nbsp; fixed random band, 2-D 64&times;64</td><td>1</td><td>2.700</td><td>1,200</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the experiment's results.md, section 1 and &ldquo;Steps to reach a loss&rdquo; (<a href="https://compute-in-transit-results.vercel.app/experiment#curves">loss curves</a>, <a href="https://compute-in-transit-results.vercel.app/experiment#ladder">steps ladder</a>). Steps are the first evaluation (every 200 steps) at or below the target, the mean over seeds; 3.158 is the 2-D low band's own final loss.</p>
+    <p><strong>Why it loses: captured energy.</strong> The share of a tensor's energy (its squared DCT coefficients) a selector keeps at the same k. On worker 0's momentum, averaged after step 200:</p>
+    <div class="table-wrap"><table>
+<thead><tr><th>Chunks</th><th>Top-k</th><th>Low band</th><th>Zig-zag</th><th>High band</th><th>Random</th></tr></thead>
+<tbody>
+<tr><td>2-D 64&times;64</td><td>0.643</td><td>0.013</td><td>0.022</td><td>0.063</td><td>0.065</td></tr>
+<tr><td>1-D 256-point</td><td>0.429</td><td>0.146</td><td>0.146</td><td>0.045</td><td>0.049</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the experiment's results.md, section 2, runs C, tensor &ldquo;momentum&rdquo;, group &ldquo;all&rdquo; (<a href="https://compute-in-transit-results.vercel.app/energy#race">results site, &ldquo;Why a fixed band loses&rdquo;</a>). A random set keeps about the keep fraction, 1/16.</p>
     <ul>
-        <li><strong>Why it is plausible:</strong> a DCT is linear, so the sum of transformed gradients is the transform of the summed gradient; aggregation could in principle happen in the transform domain.</li>
-        <li><strong>Why it is hard:</strong> each worker's top-k picks different coefficients, so sparse contributions do not line up for an in-place sum and must be gathered instead; and the optimizer's error feedback (DeMo keeps what it did not send) needs state at the worker, not in the link.</li>
-        <li><strong>Optics here would be photonic interconnect</strong>, moving the bytes, not a Fourier engine computing on them (<a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Inference/#g-photoniclink">glossary</a>). The inference series asked the same question for the KV hand-off and for collectives (<a href="https://brendanjameslynskey.github.io/FOptInf_03_Optical_Prefill_Pools/#slide-14">FOptInf 03, &ldquo;Beyond Compression&rdquo;</a>).</li>
+        <li><strong>The momentum's energy is not where a fixed band looks.</strong> At 2-D 64&times;64 the low band keeps 0.013 of it, less than a random set; top-k keeps 0.643.</li>
+        <li><strong>Error feedback makes it worse.</strong> The band is removed from the delta every step, so on the delta the low band keeps 0.000 (to three places) and the residual piles up out of band, where it is never sent. By step 3,000 the band holds 1.6&ndash;1.8e-5 of the delta's energy in the 1-D 256-point runs (<a href="https://compute-in-transit-results.vercel.app/optics#loop">optics investigation</a>, section 2).</li>
+        <li><strong>Every fixed band loses.</strong> The best, a random band at 2.700, is still 0.915 above top-k. A fixed band sends the same positions forever.</li>
     </ul>
-    <div class="callout">
-        <div class="callout-label">Speculation</div>
-        <p>Nothing on this slide is measured. Whether in-transit frequency compression of gradients preserves convergence, and at what line rate it could run, is open; the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Compute_in_Transit/">Compute in Transit</a> series takes it up. No optical-computing company is described here; the mapping is the author's own.</p>
-    </div>
 </section>
 
 <section class="slide" id="slide-13">
     <div class="slide-number">13</div>
+    <h2>Frequency Transforms in Transit: Where the Band Is Computed</h2>
+    <p>A DCT is linear, so the sum of the workers' bands is the band of the summed delta: unlike top-k, a fixed band can be <em>summed</em> rather than gathered. That gives three places to compute it, beside the measured C (band on the GPU, all-gathered):</p>
+    <div class="diagram-flow">
+        <span class="diagram-box">delta</span>
+        <span class="diagram-arrow">&rarr;</span>
+        <span class="diagram-box accent">fixed band (DCT, keep 1/16)</span>
+        <span class="diagram-arrow">&rarr;</span>
+        <span class="diagram-box">sum or gather</span>
+        <span class="diagram-arrow">&rarr;</span>
+        <span class="diagram-box">sign update</span>
+    </div>
+    <div class="table-wrap"><table>
+<thead><tr><th>Variant</th><th>Where the band is computed</th><th>Wire / step, 8 workers in one DC (bytes)</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>C&prime;</td><td>On the GPU, then a ring all-reduce of the band (linear summing in the transform domain)</td><td>3,463,572</td><td>Hypothetical: not run</td></tr>
+<tr><td>E</td><td>In each worker's pluggable link module, then all-gathered</td><td>13,854,288</td><td>Emulated optics, one seed per setting</td></tr>
+<tr><td>E&prime;</td><td>At each data centre's switch, summed there (in-network aggregation); the dense delta goes up to the switch, only the band sum crosses the WAN</td><td>31,666,944</td><td>Hypothetical: not run</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the simulation's results.md, section 1. C&prime; and E&prime; reuse C's and E's measured steps, because summing the band gives the same update as gathering it.</p>
+    <p><strong>The emulated optics (E).</strong> The first design, with the input full scale fixed after calibration and error feedback that removed the <em>exact</em> band, diverged in all six runs (final losses 11.153 to 558.834): the optics' errors were never corrected and the sign update turned a repeated bias into full steps the wrong way. The fix was to feed back the <em>band actually sent</em>, which each sender sees in the all-gather. Repaired, 8 planes: ENOB 6 ends at 3.423, ENOB 8 at 3.017, ENOB 10 at 2.878; perfect optics at 3.141. The best is still 1.09 above top-k (<a href="https://compute-in-transit-results.vercel.app/optics#enob">results site, &ldquo;ENOB and bit planes&rdquo;</a>). That the repaired optics needs fewer steps than the exact band (1,800 to 3.158 at ENOB 8, against 2,667) is a <strong>hypothesis</strong> from single seeds.</p>
+    <p><strong>When it pays: break-even WAN bandwidth</strong> (2 data centres of 4 workers; time to 3.158; transform not charged to the module):</p>
+    <div class="table-wrap"><table>
+<thead><tr><th>Comparison</th><th>Faster below</th></tr></thead>
+<tbody>
+<tr><td>E (pluggable, all-gather) against AdamW or top-k</td><td>Never, over 0.1&ndash;1,000 GB/s</td></tr>
+<tr><td>E&prime; (switch) against AdamW, E's steps</td><td>1.57 GB/s (12.5 Gb/s)</td></tr>
+<tr><td>E&prime; against AdamW, the exact band's steps</td><td>0.83 GB/s (6.64 Gb/s)</td></tr>
+<tr><td>E&prime; against top-k, E's steps</td><td>0.461 GB/s (3.69 Gb/s)</td></tr>
+<tr><td>C&prime; (GPU all-reduce of the band) against AdamW</td><td>6.58 GB/s (52.7 Gb/s)</td></tr>
+<tr><td>C&prime; against top-k</td><td>0.799 GB/s (6.39 Gb/s)</td></tr>
+<tr><td>E&prime; against C&prime;, both on the exact band's steps</td><td>Never in range</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the simulation's results.md, sections 7a and 11 (<a href="https://compute-in-transit-results.vercel.app/transit#break-even">results site, break-even</a>; <a href="https://brendanjameslynskey.github.io/CiT_05_Training_Transit_Simulation/">CiT 05</a>).</p>
+    <ul>
+        <li><strong>The pluggable never pays.</strong> Its all-gather still sends 13,854,288 bytes per worker, a quarter of AdamW's 55,417,152, while needing 1,800 steps to AdamW's 400. With the transform charged at 10 GFLOP/s, its step is 33.348 ms against 1.443 ms for the band on the GPU, 95.0% of it module compute; the budget would need 140.0 GFLOP/s before the optics set the rate, above the series' bracket of 10&ndash;99 GFLOP/s.</li>
+        <li><strong>Summing in the network is where a fixed band could gain</strong>, and only on a slow WAN. The same summation on the GPUs (C&prime;) does better without a module: only E's single-seed step advantage lets E&prime; beat C&prime; at all.</li>
+    </ul>
+    <div class="callout">
+        <div class="callout-label">Still speculative</div>
+        <p>C&prime; and E&prime; were never run; the module's coefficients are illustrative except its 9.7 W static power (Kundu et al.); the optics noise model is the series' own; everything rests on one 15.8M-parameter model and 8 workers. The photonics here is a link module computing a band on bytes in flight, not a Fourier engine computing beside the GPU, and the mapping is the Compute in Transit series' own, not any company's.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-14">
+    <div class="slide-number">14</div>
+    <h2>Training Across Data Centres: Time and Energy to a Loss</h2>
+    <p>Saved bytes matter most where the link is slowest: data-parallel workers split across data centres, syncing over a WAN. The <a href="https://brendanjameslynskey.github.io/CiT_05_Training_Transit_Simulation/">training-transit simulation</a> takes the experiment's bytes and <em>measured</em> steps to a loss and asks how long, and how much energy, each way of syncing needs to reach 3.158. Background on where training's bytes go: <a href="https://brendanjameslynskey.github.io/CiT_02_Data_Movement_in_LLM_Training/">CiT 02</a>.</p>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Topologies</h4>
+            <ul>
+                <li>1 DC &times; 8 workers, InfiniBand NDR 400G (50 GB/s) per worker</li>
+                <li>2 DC &times; 4, or 8 DC &times; 1, joined by a WAN</li>
+                <li>WAN presets: 100 GbE, 25 GbE, 400G, 800G and an 8 Gb/s share (the last three illustrative)</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>The model</h4>
+            <ul>
+                <li>t<sub>step</sub> = t<sub>compute</sub> + &Sigma;<sub>rounds</sub> (L + bytes / bandwidth)</li>
+                <li>Time to a loss = measured steps &times; t<sub>step</sub>; energy = steps &times; energy per step</li>
+                <li>An H100 per worker at an MFU of 0.40 (illustrative), 2,048 tokens per worker per step</li>
+            </ul>
+        </div>
+    </div>
+    <div class="table-wrap"><table>
+<thead><tr><th>Variant (2 DC &times; 4, 100 GbE)</th><th>Step (ms)</th><th>Steps to 3.158</th><th>Time (s)</th><th>Energy (kJ)</th><th>Module share</th><th>Step, WAN load 0.9 (ms)</th></tr></thead>
+<tbody>
+<tr><td>A&nbsp; AdamW, all-reduce</td><td>4.075</td><td>400</td><td>1.63</td><td>1.95</td><td>0.0%</td><td>26.291</td></tr>
+<tr><td>B&nbsp; DeMo top-k, all-gather</td><td>2.315</td><td>400</td><td>0.93</td><td>1.38</td><td>0.0%</td><td>12.929</td></tr>
+<tr><td>C&nbsp; band on the GPU, all-gather</td><td>1.443</td><td>2,667</td><td>3.85</td><td>7.27</td><td>0.0%</td><td>6.552</td></tr>
+<tr><td>C&prime; band on the GPU, all-reduce (hyp.)</td><td>0.810</td><td>2,667</td><td>2.16</td><td>5.90</td><td>0.0%</td><td>2.975</td></tr>
+<tr><td>E&nbsp; pluggable, all-gather [high]</td><td>4.880</td><td>1,800</td><td>8.78</td><td>10.68</td><td>7.8%</td><td>&ndash;</td></tr>
+<tr><td>E&prime; summed at the switch (hyp.) [free]</td><td>3.726</td><td>1,800</td><td>6.71</td><td>8.87</td><td>7.2%</td><td>5.442</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the simulation's results.md, sections 2, 5 and 9 (<a href="https://compute-in-transit-results.vercel.app/transit#explorer">results site, explorer</a>; <a href="https://compute-in-transit-results.vercel.app/transit#shared-wan">shared WAN</a>). [high]: module budget 99 GFLOP/s, transform charged; [free]: transform not charged. E's steps are the single-seed ENOB 8 run; the queueing column is the discrete-event engine's mean over 200 syncs, not run for E.</p>
+    <ul>
+        <li><strong>At this scale AdamW's step is mostly communication.</strong> On 2 DC &times; 4 over 100 GbE, compute is 12.1% of it and the inter-DC link 63.1%; in one data centre its step is 1.740 ms, on 8 DC &times; 1 over 25 GbE 18.505 ms.</li>
+        <li><strong>Steps decide it.</strong> Top-k reaches 3.158 first because it needs 400 steps, like AdamW, with half the wire bytes. The band's cheaper steps cannot make up 2,667 (or 1,800) of them. Further down the ladder only AdamW reaches 1.785, in 2,000 steps (8.15 s), and nothing reaches 1.646 on every seed.</li>
+        <li><strong>Energy is the devices'.</strong> Compute (100 W static per H100 for the whole step plus 1 pJ per FLOP, illustrative) is the largest column in every row; the modules (9.7 W static from Kundu et al., plus an illustrative 2 W laser) add 7.2&ndash;7.8% in the rows above (10.0% with the transform charged at 10 GFLOP/s).</li>
+        <li><strong>A shared WAN hurts whoever sends most across it.</strong> With other jobs at 0.9 of its capacity, AdamW's step grows 4.075 to 26.291 ms, E&prime;'s 3.726 to 5.442 ms. The closed forms, and the break-evens on <a href="#slide-13">slide 13</a>, leave this out.</li>
+    </ul>
+    <div class="callout">
+        <div class="callout-label">Extrapolations, not measurements</div>
+        <p>The experiment ran one model size and synced every step. Holding its steps to 3.158 fixed, the simulation gives (2 DC &times; 4, 100 GbE, seconds to 3.158):</p>
+    </div>
+    <div class="table-wrap"><table>
+<thead><tr><th>Variant</th><th>Sync every step</th><th>Every 10 (DiLoCo-style)</th><th>Every 100 (DiLoCo-style)</th><th>Llama-3-8B shape, every step</th></tr></thead>
+<tbody>
+<tr><td>A&nbsp; AdamW</td><td>1.63</td><td>0.34</td><td>0.21</td><td>806.45</td></tr>
+<tr><td>B&nbsp; DeMo top-k</td><td>0.93</td><td>0.27</td><td>0.20</td><td>453.35</td></tr>
+<tr><td>C&prime; band, GPU all-reduce (hyp.)</td><td>2.16</td><td>1.40</td><td>1.32</td><td>961.04</td></tr>
+<tr><td>E&prime; switch (hyp.) [free]</td><td>6.71</td><td>1.47</td><td>0.94</td><td>3,345.04</td></tr>
+</tbody></table></div>
+    <p class="src">Source: the simulation's results.md, section 10 (<a href="https://compute-in-transit-results.vercel.app/transit#extrapolations">results site, extrapolations</a>). Syncing every H steps assumes the steps to a loss are unchanged, which DiLoCo (Douillard et al., <a href="https://arxiv.org/abs/2311.08455">arXiv:2311.08455</a>) does not promise, since it changes the optimizer too. The model-size row scales bytes and compute with the parameter count. Summary: <a href="https://compute-in-transit-results.vercel.app/transit#what-it-says">&ldquo;What the simulation says&rdquo;</a>.</p>
+    <p>Rarer syncs shrink the communication the band saves, and with it the band's only advantage: E&prime; is behind AdamW at every H. At the Llama-3-8B shape the order is unchanged: top-k first, the in-transit variants last, bound by the module.</p>
+</section>
+
+<section class="slide" id="slide-15">
+    <div class="slide-number">15</div>
     <h2>What Does Not Map at Cluster Scale</h2>
     <div class="table-wrap">
     <table>
@@ -1189,6 +1319,9 @@
         <tr><td>Gradient all-reduce, reduce-scatter, all-gather</td><td>Bytes, not FLOPs; photonic links move them but compute nothing</td></tr>
         <tr><td>AdamW and other element-wise optimizers</td><td>Element-wise and memory-bound</td></tr>
         <tr><td>DeMo's DCTs</td><td>4.76e-06 of the step in 64-point transforms: too small (<a href="#slide-11">slide 11</a>)</td></tr>
+        <tr><td>A fixed band in place of top-k, so a link module can compute it</td><td>Loses convergence: 3.124&ndash;3.158 final loss against 1.785 for top-k on the 15.8M-parameter model; at 2-D 64&times;64 it keeps 0.013 of the momentum's energy to top-k's 0.643 (<a href="#slide-12">slide 12</a>)</td></tr>
+        <tr><td>The band in a pluggable link module</td><td>Never breaks even with AdamW or top-k over 0.1&ndash;1,000 GB/s of WAN; its compute budget is the bottleneck (<a href="#slide-13">slide 13</a>)</td></tr>
+        <tr><td>The band summed at the switch</td><td>Pays only below a few GB/s of WAN (1.57 GB/s against AdamW, 0.461 against top-k, on single-seed steps), and a GPU all-reduce of the band (C&prime;) does better with no module (<a href="#slide-13">slide 13</a>)</td></tr>
         <tr><td>Microbatched pipelines (GPipe, 1F1B)</td><td>A mask pass per microbatch; the mask flips between forward and backward spectra (<a href="#slide-06">slide 06</a>)</td></tr>
         <tr><td>Activation recomputation</td><td>Repeats the forward transforms and, usually, the mask pass</td></tr>
         <tr><td>Long convolutions split by sequence parallelism</td><td>A distributed FFT with an all-to-all, not one optical pass</td></tr>
@@ -1198,16 +1331,17 @@
     <p>And the costs that apply even where it maps: a mask rewritten every step, conversions per value, static power on every accelerator for the whole run, and one engine per data-parallel replica because the masks are replicated.</p>
 </section>
 
-<section class="slide" id="slide-14">
-    <div class="slide-number">14</div>
+<section class="slide" id="slide-16">
+    <div class="slide-number">16</div>
     <h2>What to Take Away</h2>
     <p>For this deck and for the series:</p>
     <ul>
         <li><strong>Transforms are a small share of training, as of inference.</strong> A Llama-3-8B-shaped Hyena-2 model spends 0.13&ndash;0.18% of a step on work a once-per-step mask could hold (bound 1.002x at most); only speculative block-circulant weights reach 9.53&ndash;10.07% (1.105&ndash;1.112x).</li>
         <li><strong>Training adds two costs inference does not have.</strong> Masks must be rewritten every optimizer step, 0.52&ndash;2.10 s on the illustrative device against digital steps of 0.15&ndash;2.05 s, and the weight gradient's data-by-data products would need a mask per sequence, minutes per step, so they stay digital.</li>
         <li><strong>In a cluster, scheduling decides it.</strong> Only layer-major order amortises the writes, and it fights pipelines and activation memory; data parallelism replicates the masks on every engine. Even fully hidden, a free engine buys at most about a tenth of the GPU time, against static power and an optical subsystem per accelerator.</li>
-        <li><strong>Where frequency transforms do help training is the link.</strong> DeMo's DCTs are 4.76e-06 of a step's FLOPs and save gradient bytes: a communication result, not a compute one.</li>
-        <li><strong>Next:</strong> this is the final deck of Fourier Optics for Training. Computing on training traffic in the link continues in the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Compute_in_Transit/">Compute in Transit</a> series; the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/">series hub</a> has the analysis, the glossary and all three decks.</li>
+        <li><strong>Where frequency transforms do help training is the link.</strong> DeMo's DCTs are 4.76e-06 of a step's FLOPs and save gradient bytes: a communication result, not a compute one. Its all-gather turns an 8x smaller payload into 2x fewer wire bytes on 8 workers.</li>
+        <li><strong>Putting the transform in the link, measured, does not pay.</strong> On a 15.8M-parameter GPT, a fixed band in place of top-k ends at 3.124&ndash;3.158 against 1.785; the band in a pluggable module never breaks even; summing it at the switch pays only below a few GB/s of WAN, and a GPU all-reduce of the band does better. Across data centres, steps to a loss decide the race, and top-k wins it.</li>
+        <li><strong>Next:</strong> this is the final deck of Fourier Optics for Training. The measurements behind slides 11&ndash;14 are on the <a href="https://compute-in-transit-results.vercel.app">Compute in Transit results site</a> and in <a href="https://brendanjameslynskey.github.io/CiT_04_Fixed_Band_Experiment/">CiT 04, &ldquo;The Fixed-Band Experiment&rdquo;</a> and <a href="https://brendanjameslynskey.github.io/CiT_05_Training_Transit_Simulation/">CiT 05, &ldquo;Training Transit, Simulated&rdquo;</a>; the <a href="https://brendanjameslynskey.github.io/LLM_Hub_Fourier_Optics_Training/">series hub</a> has the analysis, the glossary and all three decks.</li>
     </ul>
 </section>
 
